@@ -150,6 +150,7 @@ class ANR_LRS:
             layer with m-values
 
         probably wouldn't hurt to round length to some extent 
+        m-values start being calculated from the lowest segment ID along the routew 
         '''
         #need to check if routes have been cleaned
         #step 1 add fields 
@@ -259,5 +260,5 @@ class ANR_LRS:
 
         need to add_m()
         then make route event layer 
-        need to adapt pretty much all of these function, ergo, idk if its the best 
+        need to adapt pretty much all of these function, ergo, idk if its the best; need to at least plan out what I need to do first 
         '''
