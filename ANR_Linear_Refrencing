@@ -1,3 +1,4 @@
+import math 
 class ANR_LRS: 
     '''
     This class prepares data for and implements dynamic segmentation on Routes for the Vermont Agency of Natural Resources. It could be motified to accomplish the same goal with other data, but that functionality does not exist yet for this code.
@@ -50,8 +51,11 @@ class ANR_LRS:
 
             SOVInterest says if a piece of land is an easement for the state to do something. might be good to check that out 
         '''
-        result = arcpy.management.Merge(
-                [self.travel_routes, self.rei_segments],
+        #need to test 
+        result= arcpy.mangagement.SelectLayerByLocation(self.travel_routes, "DISJOINT", self.rei_segments)
+        #should yield the unique combination of the travel routes and rei segments 
+        arcpy.management.Merge(
+                [result, self.rei_segments],
                 self.joined_routes
             )
             
@@ -64,9 +68,7 @@ class ANR_LRS:
         
         #needs to be a layer, not feature class to work 
         arcpy.management.MakeFeatureLayer(self.joined_routes, "joined_routes_lyr")
-        arcpy.management.SelectLayerByLocation(
-          "joined_routes_lyr" , 'INTERSECT',  self.state_lands  
-        )
+      
         #look at returned layer 
         # idk if this actually exports the selected features 
         self.joined_routes =  arcpy.management.CopyFeatures("joined_routes_lyr",self.clean_routes)
@@ -89,6 +91,89 @@ class ANR_LRS:
                     seen.add(rid)
         
         return len(duplicates) == 0
+    def distance_xward(self,routes,orientation):
+        '''
+        determines the distance from a point to a point in the north/ east direction
+        '''
+        east_point = #point in the east
+        north_point = #point in the north
+        existing_fields = [f.name for f in arcpy.ListFields(routes)
+        if distance_to not in existing_fields:
+            arcpy.mangagement.AddField(routes,"distance_to", "DOUBLE")
+        with arcpy.da.UpdateCursor(routes, ["distance_to"]) as cursor:
+            for row in cursor:
+                if orientation == "north"
+                    row[0] = arcpy.analysis.Near(in_features, "north_point")
+                else: 
+                    row[0] = arcpy.analysis.Near(in_features, "east_point")
+                cursor.updateRow(row)
+            
+        
+    def orientation(self,routes):
+        '''
+        checks the orientation of a line, whether is is east west or north south oriented 
+        '''
+        arcpy.management.AddField(routes, "orientation", "TEXT") 
+        with arcpy.da.SearchCursor(line,[shape],orientation ) as cursor:
+            for row in cursor:
+                oid = row[0] 
+                line = row[1] #shape@ ?
+                
+                # Get start and end vertices
+                start_pt = line.firstPoint
+                end_pt = line.lastPoint
+                
+                # Calculate delta X and Y
+                delta_x = end_pt.X - start_pt.X
+                delta_y = end_pt.Y - start_pt.Y
+                
+                # Calculate angle (0 to 360 degrees)
+                angle_rad = math.atan2(delta_y, delta_x)
+                angle_deg = math.degrees(angle_rad) % 360
+                
+                # Normalize the angle for bidirectional orientation (fold to 0-180 range)
+                if angle_deg > 180:
+                    angle_deg -= 180
+                if angle_deg < 0:
+                    angle_deg += 180
+                if 45 <= angle_deg <= 135:
+                    row[2] = "north"
+                    cursor.updateRow(row)   
+                    return "east"
+                else:
+                    row[2] = "east"
+                    cursor.updateRow(row)   
+                    return "east"
+        
+    def segmemt_verify(self):
+        ''' 
+        verifies that segment id's are accurate, reformats them to be ascending from a certain point
+        idk if it is faster to do all of the geoprocessing in one fowl swoop or one at a time, will make two different functions 
+        and test each of them
+            1. check orientation by comparing to 90 degree or 180 degree line
+            2. gets vertices of segments, select the one that is the furthest north or east
+            3. assign that segment a value of 1
+            4. check the next eastest value a value of 2, etc etc 
+        ''' 
+        routes = self.joined_routes 
+        #somewhat of a catch 22, I need correct segments to make accurate road id, but I also need 
+        #accurate road ids to make accurate road numbers. 
+        with arcpy.da.UpdateCursor(routes, [unique_road]) as cursor:
+            for row in cursor:
+                road_name = row[0]
+                if road_name != current_road:
+                    current_road = road_name
+                    if orientation(row) == "north":
+                        #select furthest north, continue southward 
+                        distance_xward(routes, "north")
+                    else:
+                        distance_xward(routes, "east")
+                #compare the lowest one for the row 
+                
+                cursor.updateRow(row)   
+                        
+                        
+                    
     def add_id(self):
         '''
         adds a road id, needs to be ran before add_m
@@ -104,6 +189,7 @@ class ANR_LRS:
         names = set()
         count = 0
         seg_count = 1
+        # do join spatial, add parcel ID combonend
         with arcpy.da.UpdateCursor(self.joined_routes,
                 ["ANRDIST","RoadName","SegmentID", "RoadID"]) as cursor:
             for row in cursor:
