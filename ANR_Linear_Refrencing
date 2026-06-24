@@ -183,15 +183,18 @@ class ANR_LRS:
         works, but Rd and Road is used inconsitantly 
         random punction in road names 
         '''
-    
+        existing_fields = [f.name for f in arcpy.ListFields(self.joined_routes)]
         arcpy.management.AddField(self.joined_routes, "RoadID", "TEXT")
 
         names = set()
         count = 0
         seg_count = 1
         # do join spatial, add parcel ID combonend
+        if parcel_id not in existing_fields: #check parcel_id, could be(and probably is) a different name in actuality 
+            arcpy.analysis.SpatialJoin(self.joined_routes, self.state_lands, self.joined_routes, "JOIN_ONE_TO_ONE","INTERSECTS",
+            field_mapping = (field_counts = 1, fields = "parcel_id"))
         with arcpy.da.UpdateCursor(self.joined_routes,
-                ["ANRDIST","RoadName","SegmentID", "RoadID"]) as cursor:
+                ["ANRDIST","RoadName","SegmentID", "RoadID", "parcel_id"]) as cursor:
             for row in cursor:
                 #index the road name with no spaces, store as string in road_num
                 #transform segemnt id into string 
@@ -200,20 +203,26 @@ class ANR_LRS:
                 #index the district number, store as string in dist_num
                 dist_str = str(row[0]) if row[0] is not None else ""
                 dist_dig = dist_str[-1] if dist_str else "0"
+
                 # Road name cleaned (remove spaces, optionally uppercase)
                 road_str = str(row[1]).replace(" ", "") if row[1] else ""
+
+                
                 
                 # Segment ID as string
                 seg_str = str(row[2]) if row[2] is not None else f"{seg_count}" 
                 if row[2] is None:
                     seg_count += 1
-                # Assign values
-                
-                full_id = f"{dist_dig}-{road_str}-{seg_str}"
+    
+                #extract parcel id from cursor
+                parcel_num = str(row[4]) if row[4] is not None else "private"
+
+                #create full id
+                full_id = f"{dist_dig}-{parcel_id}-{road_str}-{seg_str}"
                 if full_id in names:
                     count += 1
                     road_str = f"{road_str}-{count}"
-                    full_id = f"{dist_dig}-{road_str}-{seg_str}"
+                    full_id = f"{dist_dig}-{parcel_id}-{road_str}-{seg_str}"
                     row[3] = full_id
                 else:
                     names.add(full_id)
