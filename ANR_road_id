@@ -9,16 +9,17 @@ def add_id(self):
         '''
         existing_fields = [f.name for f in arcpy.ListFields(self.joined_routes)]
         arcpy.management.AddField(self.joined_routes, "RoadID", "TEXT")
-
+        arcpy.management.AddField(self.joined_routes, "RoadNum", "TEXT")
         names = set()
         count = 0
         seg_count = 1
-        # do join spatial, add parcel ID combonend
-        if parcel_id not in existing_fields: #check parcel_id, could be(and probably is) a different name in actuality 
-            arcpy.analysis.SpatialJoin(self.joined_routes, self.state_lands, self.joined_routes, "JOIN_ONE_TO_ONE","INTERSECTS",
-            field_mapping = (field_counts = 1, fields = "parcel_id"))
+        # do spatial join, add parcel ID 
+        # step 1: spatial join between parcel and joined routes 
+
+        current road = None
+        road_count = 0 
         with arcpy.da.UpdateCursor(self.joined_routes,
-                ["ANRDIST","RoadName","SegmentID", "RoadID", "parcel_id"]) as cursor:
+                ["ANRDIST","RoadName","SegmentID", "RoadID", "POLYID", "NAME","RoadNum"]) as cursor:
             for row in cursor:
                 #index the road name with no spaces, store as string in road_num
                 #transform segemnt id into string 
@@ -26,20 +27,34 @@ def add_id(self):
                  # District number as string
                 #index the district number, store as string in dist_num
                 dist_str = str(row[0]) if row[0] is not None else ""
+                 #extract parcel id from cursor
+                parcel_num = str(row[4]) if row[4] is not None else "private"
+                
                 dist_dig = dist_str[-1] if dist_str else "0"
 
                 # Road name cleaned (remove spaces, optionally uppercase)
+                 
                 road_str = str(row[1]).replace(" ", "") if row[1] else ""
-
-                
+                if road_str == "":
+                        road_str = f"{unit_name}-{parcel_num}"
+                        #this convention does not work
+                        
+                #make road name into number 
+                #should give each road a unique name, still need to handle roads w/o names :/ 
+                if road_str != current_road:
+                        current_road = road_name
+                        count += 1
+                        row[7] = road_count
+                else:
+                        row[7] = road_count 
                 
                 # Segment ID as string
                 seg_str = str(row[2]) if row[2] is not None else f"{seg_count}" 
                 if row[2] is None:
                     seg_count += 1
-    
-                #extract parcel id from cursor
-                parcel_num = str(row[4]) if row[4] is not None else "private"
+                
+               
+                
 
                 #create full id
                 full_id = f"{dist_dig}-{parcel_id}-{road_str}-{seg_str}"
