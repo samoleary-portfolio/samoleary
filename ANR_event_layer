@@ -1,0 +1,45 @@
+def remove_columns(self,field):
+  '''
+  removes all event columns except the ones needed for IDs and the ones for the creation of events
+  '''
+  
+
+    """
+    Removes all fields from a feature class except those specified.
+
+    Parameters
+    ----------
+    feature_class : str
+        Path to the feature class or table.
+    fields_to_keep : list
+        List of field names to retain.
+    """
+    
+    # ArcGIS-required fields that cannot be deleted
+    required_fields = ["OBJECTID","ANRDIST","RoadName","SegmentID", "RoadID", "POLYID", "NAME", "length"]
+    if field == "rei":
+      field == [#list of all of the rei event types ]
+    # Combine user-specified fields with required fields
+    keep = {f.upper() for f in field}
+    keep.update(field.upper() for field in required_fields)
+
+    # Identify deletable fields
+    delete_fields = []
+
+    for field in arcpy.ListFields(feature_class):
+        if not field.required and field.name.upper() not in keep:
+            delete_fields.append(field.name)
+
+    # Delete unwanted fields
+    if delete_fields:
+        arcpy.management.DeleteField(feature_class, delete_fields)
+        print(f"Deleted {len(delete_fields)} fields.")
+        return self.joined_routes
+    else:
+        print("No fields to delete.")
+def make_event_layer(self, data):
+  '''
+  selects all except the given colomn, and makes and event table said column
+  '''
+  self.remove_columns(data)
+  self.LR()
