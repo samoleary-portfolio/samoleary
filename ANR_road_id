@@ -47,6 +47,7 @@ def add_id(self):
                         row[7] = road_count
                 else:
                         row[7] = road_count 
+                        road_num = row[7]
                 
                 # Segment ID as string
                 seg_str = str(row[2]) if row[2] is not None else f"{seg_count}" 
@@ -61,7 +62,7 @@ def add_id(self):
                 if full_id in names:
                     count += 1
                     road_str = f"{road_str}-{count}"
-                    full_id = f"{dist_dig}-{parcel_id}-{road_str}-{seg_str}"
+                    full_id = f"{dist_dig}-{parcel_id}-{road_num}-{seg_str}"
                     row[3] = full_id
                 else:
                     names.add(full_id)
