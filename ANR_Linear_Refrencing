@@ -34,28 +34,18 @@ class ANR_LRS:
         self.events = "events"
         self.public = "public_layer"
         self.file = "input_file"
+        self.keep = "final" 
     
         
     def clean(self):
         '''
         merges routes and ensures analysis is only being done on state roads
 
-        to look at:
-            might be more issues with the predicate selecting what I want it to
-            
-            might need to find a different predicate, intersects works well but the parcel shapes
-            are in such a way that we can't expand the search radius without overincluding but are still 
-            either over including some edge cases and under including some segments that are on the edge
-            due to a geometry issue. buffering the roads might not hurt, but more work is probably needed 
-            to make it work in the way I want it to work. 
-
-            SOVInterest says if a piece of land is an easement for the state to do something. might be good to check that out 
         '''
         #need to test 
-        result= arcpy.mangagement.SelectLayerByLocation(self.travel_routes, "DISJOINT", self.rei_segments)
         #should yield the unique combination of the travel routes and rei segments 
         arcpy.management.Merge(
-                [result, self.rei_segments],
+                [self.travel_routes, self.rei_segments],
                 self.joined_routes
             )
             
@@ -73,6 +63,7 @@ class ANR_LRS:
         # idk if this actually exports the selected features 
         self.joined_routes =  arcpy.management.CopyFeatures("joined_routes_lyr",self.clean_routes)
         return self.joined_routes 
+
     def id_check(self,routes):
         '''
         verifies that all id's are unique
@@ -91,87 +82,6 @@ class ANR_LRS:
                     seen.add(rid)
         
         return len(duplicates) == 0
-    def distance_xward(self,routes,orientation):
-        '''
-        determines the distance from a point to a point in the north/ east direction
-        '''
-        east_point = #point in the east
-        north_point = #point in the north
-        existing_fields = [f.name for f in arcpy.ListFields(routes)
-        if distance_to not in existing_fields:
-            arcpy.mangagement.AddField(routes,"distance_to", "DOUBLE")
-        with arcpy.da.UpdateCursor(routes, ["distance_to"]) as cursor:
-            for row in cursor:
-                if orientation == "north"
-                    row[0] = arcpy.analysis.Near(in_features, "north_point")
-                else: 
-                    row[0] = arcpy.analysis.Near(in_features, "east_point")
-                cursor.updateRow(row)
-            
-        
-    def orientation(self,routes):
-        '''
-        checks the orientation of a line, whether is is east west or north south oriented 
-        '''
-        arcpy.management.AddField(routes, "orientation", "TEXT") 
-        with arcpy.da.SearchCursor(line,[shape],orientation ) as cursor:
-            for row in cursor:
-                oid = row[0] 
-                line = row[1] #shape@ ?
-                
-                # Get start and end vertices
-                start_pt = line.firstPoint
-                end_pt = line.lastPoint
-                
-                # Calculate delta X and Y
-                delta_x = end_pt.X - start_pt.X
-                delta_y = end_pt.Y - start_pt.Y
-                
-                # Calculate angle (0 to 360 degrees)
-                angle_rad = math.atan2(delta_y, delta_x)
-                angle_deg = math.degrees(angle_rad) % 360
-                
-                # Normalize the angle for bidirectional orientation (fold to 0-180 range)
-                if angle_deg > 180:
-                    angle_deg -= 180
-                if angle_deg < 0:
-                    angle_deg += 180
-                if 45 <= angle_deg <= 135:
-                    row[2] = "north"
-                    cursor.updateRow(row)   
-                    return "east"
-                else:
-                    row[2] = "east"
-                    cursor.updateRow(row)   
-                    return "east"
-        
-    def segmemt_verify(self):
-        ''' 
-        verifies that segment id's are accurate, reformats them to be ascending from a certain point
-        idk if it is faster to do all of the geoprocessing in one fowl swoop or one at a time, will make two different functions 
-        and test each of them
-            1. check orientation by comparing to 90 degree or 180 degree line
-            2. gets vertices of segments, select the one that is the furthest north or east
-            3. assign that segment a value of 1
-            4. check the next eastest value a value of 2, etc etc 
-        ''' 
-        routes = self.joined_routes 
-        #somewhat of a catch 22, I need correct segments to make accurate road id, but I also need 
-        #accurate road ids to make accurate road numbers. 
-        with arcpy.da.UpdateCursor(routes, [unique_road]) as cursor:
-            for row in cursor:
-                road_name = row[0]
-                if road_name != current_road:
-                    current_road = road_name
-                    if orientation(row) == "north":
-                        #select furthest north, continue southward 
-                        distance_xward(routes, "north")
-                    else:
-                        distance_xward(routes, "east")
-                #compare the lowest one for the row 
-                
-                cursor.updateRow(row)   
-                        
                         
                     
     def add_id(self):
@@ -183,18 +93,54 @@ class ANR_LRS:
         works, but Rd and Road is used inconsitantly 
         random punction in road names 
         '''
-        existing_fields = [f.name for f in arcpy.ListFields(self.joined_routes)]
-        arcpy.management.AddField(self.joined_routes, "RoadID", "TEXT")
-
+        existing_fields = [f.name for f in arcpy.ListFields(self.clean_routes)]
+        arcpy.management.AddField(self.clean_routes, "RoadID", "TEXT")
+        arcpy.management.AddField(self.clean_routes, "RoadNum", "TEXT")
+        if "unique_road" not in existing_fields:
+                arcpy.management.AddField(self.clean_routes, "unique_road", "TEXT")
         names = set()
         count = 0
         seg_count = 1
-        # do join spatial, add parcel ID combonend
-        if parcel_id not in existing_fields: #check parcel_id, could be(and probably is) a different name in actuality 
-            arcpy.analysis.SpatialJoin(self.joined_routes, self.state_lands, self.joined_routes, "JOIN_ONE_TO_ONE","INTERSECTS",
-            field_mapping = (field_counts = 1, fields = "parcel_id"))
-        with arcpy.da.UpdateCursor(self.joined_routes,
-                ["ANRDIST","RoadName","SegmentID", "RoadID", "parcel_id"]) as cursor:
+        # do spatial join, add parcel ID 
+        # step 1: spatial join between parcel and joined routes 
+        field_mappings = arcpy.FieldMappings()
+
+        # Add target (keeps all its fields)
+        field_mappings.addTable(self.clean_routes)
+        
+        # Add join layer
+        field_mappings.addTable(self.state_lands)
+        
+        # Fields you want to keep from join layer
+        keep_fields = ["POLYID", "NAME"]
+        
+        # Loop backwards so removal is safe
+        for i in reversed(range(field_mappings.fieldCount)):
+            fmap = field_mappings.getFieldMap(i)
+            field_name = fmap.outputField.name
+        
+            # If field comes from join layer AND is not wanted → remove it
+            if field_name not in keep_fields:
+                # Check if it's NOT from target layer
+                if field_name not in [f.name for f in arcpy.ListFields(self.joined_routes)]:
+                    field_mappings.removeFieldMap(i)
+        
+        # Run Spatial Join
+        arcpy.analysis.SpatialJoin(
+            self.clean_routes,
+            self.state_lands,
+            self.keep, 
+            "JOIN_ONE_TO_ONE",
+            "KEEP_COMMON",
+            field_mapping=field_mappings,
+            match_option="INTERSECT"
+        )
+        arcpy.management.AddField(self.keep, "RoadID", "TEXT")
+        arcpy.management.AddField(self.keep, "RoadNum", "TEXT")
+        current_road = None
+        road_count = 0 
+        with arcpy.da.UpdateCursor(self.keep,
+                ["ANRDIST","RoadName","SegmentID", "RoadID","RoadNum","POLYID"]) as cursor:
             for row in cursor:
                 #index the road name with no spaces, store as string in road_num
                 #transform segemnt id into string 
@@ -202,138 +148,119 @@ class ANR_LRS:
                  # District number as string
                 #index the district number, store as string in dist_num
                 dist_str = str(row[0]) if row[0] is not None else ""
+                 #extract parcel id from cursor
+                
                 dist_dig = dist_str[-1] if dist_str else "0"
-
-                # Road name cleaned (remove spaces, optionally uppercase)
-                road_str = str(row[1]).replace(" ", "") if row[1] else ""
-
-                
-                
-                # Segment ID as string
                 seg_str = str(row[2]) if row[2] is not None else f"{seg_count}" 
                 if row[2] is None:
                     seg_count += 1
-    
-                #extract parcel id from cursor
-                parcel_num = str(row[4]) if row[4] is not None else "private"
+                # Road name cleaned (remove spaces, optionally uppercase)
+                 
+                road_str = str(row[1]).replace(" ", "") if row[1] else ""
+               
+                        #this convention does not work
+                        
+                #make road name into number 
+                #should give each road a unique name, still need to handle roads w/o names :/ 
+                if road_str != current_road:
+                        current_road = road_str
+                        count += 1
+                        road_count +=1
+                        row[4] = road_count
+                else:
+                        row[4] = road_count 
+                        road_num = row[4]
+                
+                
+                
+                        
+                parcel_num = str(row[5]).rsplit("-",1)[1] if row[5] is not None else "private"
 
                 #create full id
-                full_id = f"{dist_dig}-{parcel_id}-{road_str}-{seg_str}"
+                full_id = f"{dist_dig}-{road_count}-{parcel_num}-{seg_str}"
                 if full_id in names:
                     count += 1
-                    road_str = f"{road_str}-{count}"
-                    full_id = f"{dist_dig}-{parcel_id}-{road_str}-{seg_str}"
+                    road_count = f"{road_count}-{count}"
+                    full_id = f"{dist_dig}-{road_count}-{parcel_num}-{seg_str}"
                     row[3] = full_id
                 else:
                     names.add(full_id)
                     row[3] = full_id
-                cursor.updateRow(row)   
-            
-            verify = self.id_check(self.joined_routes)
+                cursor.updateRow(row)  
+            self.keep = self.joined_routes
+            verify = self.id_check(self.keep)
             if verify == True: 
                 print("valid ids")
-                return self.joined_routes
+                self.joined_routes = self.keep
+                return self.keep
             else:
                 print("id's not valid")
-
+                self.joined_routes = self.keep
+                return self.keep
     
         #take ANRDIST, RoadName and SegmentID and concatinate them
-    def add_m(self):
-        ''' 
-        adds appropriate m-values
-        returns:
-            layer with m-values
-
-        probably wouldn't hurt to round length to some extent 
-        m-values start being calculated from the lowest segment ID along the routew 
-        '''
-        #need to check if routes have been cleaned
-        #step 1 add fields 
-        if geometry.type == "polyline": # for lines 
-            # makes a list of fields that can be searched
-            existing_fields = [f.name for f in arcpy.ListFields(self.joined_routes)]
-            self.clean()
-            if "RoadID" not in existing_fields:
-                self.add_id()
-            if "unique_road" not in existing_fields:
-                arcpy.management.AddField(self.joined_routes, "unique_road", "TEXT")
-                with arcpy.da.UpdateCursor(self.joined_routes,
-                    ["RoadID","unique_road"]) as cursor:
-                    for row in cursor:
-                        row[1] = row[0].rsplit("-", 1)[0]
-                        cursor.updateRow(row)
-            #adds from_m field
-            if "FROM_M" not in existing_fields:
-                arcpy.management.AddField(self.joined_routes, "FROM_M", "DOUBLE")
-            #adds to_m field
-            if "TO_M" not in existing_fields:
-                arcpy.management.AddField(self.joined_routes, "TO_M", "DOUBLE")
-                
-            #creates new length catagory   
-            arcpy.management.AddField(self.joined_routes, "length", "DOUBLE")
+   
+    def remove_columns(self,field):   
+        """
+        Removes all fields from a feature class except those specified.
         
-            #populates the length field
-            
-            arcpy.management.CalculateGeometryAttributes(
-            self.joined_routes,
-            [["length", "LENGTH"]],
-            length_unit="METERS")
-    
-            # step 2: arrange fields 
-            arcpy.management.Sort(
-                self.joined_routes,
-                "joined_routes_sorted",
-                [["RoadID", "ASCENDING"]] #shouldn't need Segment ID if the RoadID is working properly 
-            )
-    
-            # step 3: add m-values 
-                
-            current_road = None
-            current_measure = 0
-            # adds m values 
-            with arcpy.da.UpdateCursor(
-                    self.joined_routes_sorted,
-                    ["unique_road","length", "FROM_M", "TO_M"]) as cursor:
-            
-                for row in cursor:
-            
-                    road_name = row[0]
-                    length = row[1]
-            
-                    # Reset cumulative measure when road changes
-                    if road_name != current_road:
-                        current_road = road_name
-                        current_measure = 0
-            
-                    row[2] = current_measure          # FROM_M
-                    row[3] = current_measure + length # TO_M
-    
-                    
-                    current_measure += length
-            
-                    cursor.updateRow(row)
-                print(arcpy.GetMessages())
-                return self.joined_routes_sorted #may need to be stepped out
-            
+        Parameters
+        ----------
+        feature_class : str
+            Path to the feature class or table.
+        fields_to_keep : list
+            List of field names to retain.
+        """
+        #resets the layer each time 
+        self.clean()
+        # ArcGIS-required fields that cannot be deleted
+        required_fields = ["OBJECTID","ANRDIST","RoadName","unique_road","SegmentID", "RoadID", "POLYID", "NAME", "length",field]
+        # Combine user-specified fields with required fields
+        keep = {f.upper() for f in field}
+        keep.update(field.upper() for field in required_fields)
+        
+        # Identify deletable fields
+        delete_fields = []
+        
+        for field in arcpy.ListFields(self.joined_routes):
+            if not field.required and field.name.upper() not in keep:
+                delete_fields.append(field.name)
+        
+        # Delete unwanted fields
+        if delete_fields:
+            arcpy.management.DeleteField(self.joined_routes, delete_fields)
+            print(f"Deleted {len(delete_fields)} fields.")
+            return self.joined_routes
+        else:
+            print("No fields to delete.")
+  
     def LR(self):
         '''
         performs ArcPy linear refrencing tools until an event table is created 
         '''
         #check for m values
         #performs LR and returns and event table 
-        
-        existing_fields = [f.name for f in arcpy.ListFields(self.joined_routes_sorted)]
-        if "TO_M" not in existing_fields:
-            add_m()
-        arcpy.lr.CreateRoutes(self.joined_routes_sorted, "unique_road", self.lr_routes, "TWO_FIELDS", "FROM_M", "TO_M")  
-        arcpy.lr.LocateFeaturesAlongRoutes(self.joined_routes_sorted, self.lr_routes,
+        arcpy.env.overwriteOutput = True
+        existing_fields = [f.name for f in arcpy.ListFields(self.keep)]
+        with arcpy.da.UpdateCursor(self.keep,
+            ["RoadID","unique_road"]) as cursor:
+            for row in cursor:
+                if row[0]: 
+                    row[1] = row[0].rsplit("-", 2)[0]
+                    
+                else:
+                # Optional: Handle what happens if RoadID is missing
+                    row[1] = None  # or leave it blank
+                cursor.updateRow(row)
+        arcpy.lr.CreateRoutes(self.keep, "unique_road", self.lr_routes, "LENGTH")  
+        arcpy.lr.LocateFeaturesAlongRoutes(self.keep, self.lr_routes,
                                    "unique_road", "0.5 Feet", "event_table",
                                    "unique_road LINE FROM_M TO_M")
         arcpy.conversion.TableToExcel(
             Input_Table="event_table",
-            Output_Excel_File=r"path for where you want the file") #path would need to be changed
+            Output_Excel_File=r"event_table1") #path would need to be changed
         print(arcpy.GetMessages())
-         
+    
     def update_xl(self):
         '''
         updates the LR routes from the excel table
@@ -342,18 +269,24 @@ class ANR_LRS:
         event table in excel
         routes
 
-        Need to: add convention for adding point data 
-
-        add function for adding point data
         ''' 
-        arcpy.conversion.ExcelToTable(r"path for where you want the file", self.events, "event_table")
+        #need to update the name each time S
+        arcpy.conversion.ExcelToTable(r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject\event_table1.xls", self.events, "event_table")
         arcpy.lr.MakeRouteEventLayer(self.lr_routes,"unique_road",self.events,"unique_road LINE FROM_M TO_M",self.public)
+        return self.public
+        #make this layer a web layer as well 
     
-    def add_layer(self,point = null,line = null,file):
+    def make_event_layer(self, data):
         '''
-        adds another dynamically segmented layer 
+        selects all except the given colomn, and makes and event table said column
+        '''
+        self.remove_columns(data)
+        print("columns removed")
+        self.add_id()
+        print("ids created")
+        self.LR()
+        print("routes created")
+        self.update_xl   
+        print(r"{data} event layer created")
+    
 
-        need to add_m()
-        then make route event layer 
-        need to adapt pretty much all of these function, ergo, idk if its the best; need to at least plan out what I need to do first 
-        '''
