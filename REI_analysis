@@ -1,0 +1,28 @@
+class REI():
+    '''
+    a class to create summary stats and analyze Vermont's Road Erosion Inventory (REI) data 
+    ''' 
+    def __init__(self):
+        '''
+        initializes the class
+        '''
+        arcpy.env.workspace = r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject"
+        self.rei_segments = "ANR_Forest_Road_Segments"
+        self.state_lands = "ANR_Lands_Dataset_(Parcel)"
+    def prep(self):
+        '''
+        preps data for analysis 
+        1. spatial join with crossings 
+        2. road ids
+        3. convert segment score to a number 
+        '''
+    def score_to_num(self): 
+        '''
+        converts a given REI score to a number for summary stats 
+        '''
+        
+    def road_summary(self):
+        '''
+        provides summaries of REI data by road\
+        1. dissolve by road id
+        '''
