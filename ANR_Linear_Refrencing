@@ -1,4 +1,3 @@
-import math 
 class ANR_LRS: 
     '''
     This class prepares data for and implements dynamic segmentation on Routes for the Vermont Agency of Natural Resources. It could be motified to accomplish the same goal with other data, but that functionality does not exist yet for this code.
@@ -41,11 +40,33 @@ class ANR_LRS:
         '''
         merges routes and ensures analysis is only being done on state roads
 
+        to look at:
+            might be more issues with the predicate selecting what I want it to
+            
+            might need to find a different predicate, intersects works well but the parcel shapes
+            are in such a way that we can't expand the search radius without overincluding but are still 
+            either over including some edge cases and under including some segments that are on the edge
+            due to a geometry issue. buffering the roads might not hurt, but more work is probably needed 
+            to make it work in the way I want it to work. 
+
+            SOVInterest says if a piece of land is an easement for the state to do something. might be good to check that out 
         '''
         #need to test 
         #should yield the unique combination of the travel routes and rei segments 
+
+        #getting rid of global ID 
+        
+        field_map = arcpy.FieldMappings()
+        field_map.addTable(self.travel_routes)
+                
+        rem_fields = "GlOBALID"
+        
+        field_index = field_map.findFieldMapIndex(rem_fields)
+        field_map.removeFieldMap(field_index)
+        arcpy.conversion.ExportFeatures(self.travel_routes, "routes_no_id", field_mapping = field_map)
+        
         arcpy.management.Merge(
-                [self.travel_routes, self.rei_segments],
+                ["routes_no_id", self.rei_segments],
                 self.joined_routes
             )
             
@@ -62,8 +83,8 @@ class ANR_LRS:
         #look at returned layer 
         # idk if this actually exports the selected features 
         self.joined_routes =  arcpy.management.CopyFeatures("joined_routes_lyr",self.clean_routes)
+        #self.joined_routes = "dist1_roads"
         return self.joined_routes 
-
     def id_check(self,routes):
         '''
         verifies that all id's are unique
@@ -96,8 +117,10 @@ class ANR_LRS:
         existing_fields = [f.name for f in arcpy.ListFields(self.clean_routes)]
         arcpy.management.AddField(self.clean_routes, "RoadID", "TEXT")
         arcpy.management.AddField(self.clean_routes, "RoadNum", "TEXT")
+        '''
         if "unique_road" not in existing_fields:
                 arcpy.management.AddField(self.clean_routes, "unique_road", "TEXT")
+                '''
         names = set()
         count = 0
         seg_count = 1
@@ -112,7 +135,7 @@ class ANR_LRS:
         field_mappings.addTable(self.state_lands)
         
         # Fields you want to keep from join layer
-        keep_fields = ["POLYID", "NAME"]
+        keep_fields = ["POLYID"]
         
         # Loop backwards so removal is safe
         for i in reversed(range(field_mappings.fieldCount)):
@@ -124,7 +147,7 @@ class ANR_LRS:
                 # Check if it's NOT from target layer
                 if field_name not in [f.name for f in arcpy.ListFields(self.joined_routes)]:
                     field_mappings.removeFieldMap(i)
-        
+        '''
         # Run Spatial Join
         arcpy.analysis.SpatialJoin(
             self.clean_routes,
@@ -135,12 +158,13 @@ class ANR_LRS:
             field_mapping=field_mappings,
             match_option="INTERSECT"
         )
+        '''
         arcpy.management.AddField(self.keep, "RoadID", "TEXT")
         arcpy.management.AddField(self.keep, "RoadNum", "TEXT")
         current_road = None
         road_count = 0 
         with arcpy.da.UpdateCursor(self.keep,
-                ["ANRDIST","RoadName","SegmentID", "RoadID","RoadNum","POLYID"]) as cursor:
+                ["ANRDIST","RoadName", "RoadID","RoadNum"]) as cursor: # polyid removed 
             for row in cursor:
                 #index the road name with no spaces, store as string in road_num
                 #transform segemnt id into string 
@@ -151,13 +175,11 @@ class ANR_LRS:
                  #extract parcel id from cursor
                 
                 dist_dig = dist_str[-1] if dist_str else "0"
-                seg_str = str(row[2]) if row[2] is not None else f"{seg_count}" 
-                if row[2] is None:
-                    seg_count += 1
+                
                 # Road name cleaned (remove spaces, optionally uppercase)
                  
-                road_str = str(row[1]).replace(" ", "") if row[1] else ""
-               
+                road_str = str(row[1]).replace(" ", "").replace("Road","Rd") if row[1] else ""
+                row[1] = road_str
                         #this convention does not work
                         
                 #make road name into number 
@@ -166,29 +188,34 @@ class ANR_LRS:
                         current_road = road_str
                         count += 1
                         road_count +=1
-                        row[4] = road_count
+                        row[3] = road_count
                 else:
-                        row[4] = road_count 
-                        road_num = row[4]
+                        row[3] = road_count 
+                        road_num = row[3]
                 
                 
                 
                         
-                parcel_num = str(row[5]).rsplit("-",1)[1] if row[5] is not None else "private"
+               # parcel_num = str(row[4]).rsplit("-",1)[1] if row[4] is not None else "private"
 
                 #create full id
-                full_id = f"{dist_dig}-{road_count}-{parcel_num}-{seg_str}"
+                full_id = f"{dist_dig}-{road_count}"
+                '''
                 if full_id in names:
+                    store = road_count
                     count += 1
                     road_count = f"{road_count}-{count}"
-                    full_id = f"{dist_dig}-{road_count}-{parcel_num}-{seg_str}"
+                    full_id = f"{dist_dig}-{road_count}-{parcel_num}"
                     row[3] = full_id
+                    road_count = store
                 else:
                     names.add(full_id)
-                    row[3] = full_id
+                '''
+                row[2] = full_id
                 cursor.updateRow(row)  
             self.keep = self.joined_routes
-            verify = self.id_check(self.keep)
+           # verify = self.id_check(self.keep)
+            '''
             if verify == True: 
                 print("valid ids")
                 self.joined_routes = self.keep
@@ -197,10 +224,14 @@ class ANR_LRS:
                 print("id's not valid")
                 self.joined_routes = self.keep
                 return self.keep
-    
+            '''
+            return self.keep
         #take ANRDIST, RoadName and SegmentID and concatinate them
    
-    def remove_columns(self,field):   
+    def remove_columns(self,field):
+      
+      
+    
         """
         Removes all fields from a feature class except those specified.
         
@@ -212,9 +243,8 @@ class ANR_LRS:
             List of field names to retain.
         """
         #resets the layer each time 
-        self.clean()
         # ArcGIS-required fields that cannot be deleted
-        required_fields = ["OBJECTID","ANRDIST","RoadName","unique_road","SegmentID", "RoadID", "POLYID", "NAME", "length",field]
+        required_fields = ["OBJECTID","ANRDIST","RoadName","unique_road", "RoadID","length",field]
         # Combine user-specified fields with required fields
         keep = {f.upper() for f in field}
         keep.update(field.upper() for field in required_fields)
@@ -241,24 +271,28 @@ class ANR_LRS:
         #check for m values
         #performs LR and returns and event table 
         arcpy.env.overwriteOutput = True
+        '''
         existing_fields = [f.name for f in arcpy.ListFields(self.keep)]
         with arcpy.da.UpdateCursor(self.keep,
             ["RoadID","unique_road"]) as cursor:
             for row in cursor:
-                if row[0]: 
-                    row[1] = row[0].rsplit("-", 2)[0]
-                    
+                if row[0]:
+                    row[1] = row[0].rsplit("-", 1)[0]
                 else:
-                # Optional: Handle what happens if RoadID is missing
-                    row[1] = None  # or leave it blank
+                    row[1] = None
+                    
+                  # or leave it blank
                 cursor.updateRow(row)
-        arcpy.lr.CreateRoutes(self.keep, "unique_road", self.lr_routes, "LENGTH")  
+        '''
+        arcpy.lr.CreateRoutes(self.keep, "RoadID", self.lr_routes, "LENGTH")  
+        delete_fields =["TARGET_FID","JOIN_COUNT","OBJECTID_1"]
+        arcpy.management.DeleteField(self.keep, delete_fields)
         arcpy.lr.LocateFeaturesAlongRoutes(self.keep, self.lr_routes,
-                                   "unique_road", "0.5 Feet", "event_table",
-                                   "unique_road LINE FROM_M TO_M")
+                                   "RoadID", "0.5 Feet", "event_table",
+                                   "RoadID LINE FROM_M TO_M")
         arcpy.conversion.TableToExcel(
             Input_Table="event_table",
-            Output_Excel_File=r"event_table1") #path would need to be changed
+            Output_Excel_File=r"event_table12") #path would need to be changed
         print(arcpy.GetMessages())
     
     def update_xl(self):
@@ -271,22 +305,29 @@ class ANR_LRS:
 
         ''' 
         #need to update the name each time S
-        arcpy.conversion.ExcelToTable(r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject\event_table1.xls", self.events, "event_table")
-        arcpy.lr.MakeRouteEventLayer(self.lr_routes,"unique_road",self.events,"unique_road LINE FROM_M TO_M",self.public)
+        arcpy.conversion.ExcelToTable(r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject\event_table12.xls", self.events, "event_table")
+        
+        
+        arcpy.lr.MakeRouteEventLayer(self.lr_routes,"RoadID",self.events,"unique_road LINE FROM_M TO_M",self.public)
         return self.public
         #make this layer a web layer as well 
     
-    def make_event_layer(self, data):
+    def prep_event_layer(self, data):
         '''
         selects all except the given colomn, and makes and event table said column
         '''
+        self.clean()
         self.remove_columns(data)
         print("columns removed")
         self.add_id()
         print("ids created")
+        #removes frivolous columns from the id creation process
+        self.remove_columns(data)
+        #doesn't work from this point below within the function, but ran individually it does
+        '''
         self.LR()
         print("routes created")
         self.update_xl   
         print(r"{data} event layer created")
+        '''
     
-
