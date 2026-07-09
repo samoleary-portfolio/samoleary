@@ -264,7 +264,7 @@ class ANR_LRS:
         else:
             print("No fields to delete.")
   
-    def LR(self):
+    def LR(self,data):
         '''
         performs ArcPy linear refrencing tools until an event table is created 
         '''
@@ -287,6 +287,7 @@ class ANR_LRS:
         arcpy.lr.CreateRoutes(self.keep, "RoadID", self.lr_routes, "LENGTH")  
         delete_fields =["TARGET_FID","JOIN_COUNT","OBJECTID_1"]
         arcpy.management.DeleteField(self.keep, delete_fields)
+        #dissolve keep by whatever attribute we are using
         arcpy.lr.LocateFeaturesAlongRoutes(self.keep, self.lr_routes,
                                    "RoadID", "0.5 Feet", "event_table",
                                    "RoadID LINE FROM_M TO_M")
