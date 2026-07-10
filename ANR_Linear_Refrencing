@@ -34,6 +34,7 @@ class ANR_LRS:
         self.public = "public_layer"
         self.file = "input_file"
         self.keep = "final" 
+        self.diss = "dissolved"
     
         
     def clean(self):
@@ -124,6 +125,7 @@ class ANR_LRS:
         names = set()
         count = 0
         seg_count = 1
+        '''
         # do spatial join, add parcel ID 
         # step 1: spatial join between parcel and joined routes 
         field_mappings = arcpy.FieldMappings()
@@ -148,6 +150,7 @@ class ANR_LRS:
                 if field_name not in [f.name for f in arcpy.ListFields(self.joined_routes)]:
                     field_mappings.removeFieldMap(i)
         '''
+        '''
         # Run Spatial Join
         arcpy.analysis.SpatialJoin(
             self.clean_routes,
@@ -159,11 +162,10 @@ class ANR_LRS:
             match_option="INTERSECT"
         )
         '''
-        arcpy.management.AddField(self.keep, "RoadID", "TEXT")
-        arcpy.management.AddField(self.keep, "RoadNum", "TEXT")
+        
         current_road = None
         road_count = 0 
-        with arcpy.da.UpdateCursor(self.keep,
+        with arcpy.da.UpdateCursor(self.clean_routes,
                 ["ANRDIST","RoadName", "RoadID","RoadNum"]) as cursor: # polyid removed 
             for row in cursor:
                 #index the road name with no spaces, store as string in road_num
@@ -213,7 +215,7 @@ class ANR_LRS:
                 '''
                 row[2] = full_id
                 cursor.updateRow(row)  
-            self.keep = self.joined_routes
+            self.joined_route = self.clean_routes
            # verify = self.id_check(self.keep)
             '''
             if verify == True: 
@@ -225,7 +227,7 @@ class ANR_LRS:
                 self.joined_routes = self.keep
                 return self.keep
             '''
-            return self.keep
+            return self.clean_routes
         #take ANRDIST, RoadName and SegmentID and concatinate them
    
     def remove_columns(self,field):
@@ -284,17 +286,19 @@ class ANR_LRS:
                   # or leave it blank
                 cursor.updateRow(row)
         '''
-        arcpy.lr.CreateRoutes(self.keep, "RoadID", self.lr_routes, "LENGTH")  
-        delete_fields =["TARGET_FID","JOIN_COUNT","OBJECTID_1"]
-        arcpy.management.DeleteField(self.keep, delete_fields)
+        arcpy.lr.CreateRoutes(self.clean_routes, "RoadID", self.lr_routes, "LENGTH")  
+        
         #dissolve keep by whatever attribute we are using
-        arcpy.management.Dissolve(self.keep,"dissolved" , data
-        arcpy.lr.LocateFeaturesAlongRoutes("dissolved", self.lr_routes,
+        arcpy.management.Dissolve(self.clean_routes,self.diss, data)
+        arcpy.lr.LocateFeaturesAlongRoutes(self.diss, self.lr_routes,
                                    "RoadID", "0.5 Feet", "event_table",
                                    "RoadID LINE FROM_M TO_M")
+        '''
         arcpy.conversion.TableToExcel(
             Input_Table="event_table",
-            Output_Excel_File=r"event_table12") #path would need to be changed
+            Output_Excel_File=r"event_table")
+        '''
+            #path would need to be changed
         print(arcpy.GetMessages())
     
     def update_xl(self):
@@ -307,9 +311,9 @@ class ANR_LRS:
 
         ''' 
         #need to update the name each time S
-        arcpy.conversion.ExcelToTable(r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject\event_table12.xls", self.events, "event_table")
+       # arcpy.conversion.ExcelToTable(r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject\event_table12.xls", self.events, "event_table")
         
-        
+        #change self.events to "event table"
         arcpy.lr.MakeRouteEventLayer(self.lr_routes,"RoadID",self.events,"unique_road LINE FROM_M TO_M",self.public)
         return self.public
         #make this layer a web layer as well 
@@ -332,4 +336,3 @@ class ANR_LRS:
         self.update_xl   
         print(r"{data} event layer created")
         '''
-    
