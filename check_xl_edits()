@@ -1,0 +1,27 @@
+def build_triple_set(fc, key_field, fields):
+    """Returns a set of (key, field_name, value) tuples."""
+    triples = set()
+    all_fields = [key_field] + fields
+    with arcpy.da.SearchCursor(fc, all_fields) as cursor:
+        for row in cursor:
+            key = row[0]
+            for field, val in zip(fields, row[1:]):
+                # normalize so type/format quirks don't create false diffs
+                if val is None:
+                    norm = None
+                elif isinstance(val, float):
+                    norm = round(val, 3)
+                else:
+                    norm = str(val).strip()
+                triples.add((key, field, norm))
+    return triples
+
+
+def_check_xl():
+  layer_set = build_triple_set(layer,RoadID, data)
+  excel_set = build_triple_set(event_table, RoadID,data)
+  layer_by_kf = {(k, f): v for k, f, v in layer_set}
+  excel_by_kf = {(k, f): v for k, f, v in excel_set}
+  
+  changed_keys = {kf for kf in layer_by_kf if kf in excel_by_kf and layer_by_kf[kf] != excel_by_kf[kf]}
+  print(f"You Changed {len(changed_keys)} fields. Is this correct? If not, go to excel version history and revent")
