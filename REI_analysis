@@ -9,20 +9,65 @@ class REI():
         arcpy.env.workspace = r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject"
         self.rei_segments = "ANR_Forest_Road_Segments"
         self.state_lands = "ANR_Lands_Dataset_(Parcel)"
+        
+
+    def score_to_num(self, feature_class, cat_field, num_field="CAT_NUM", category_map=None):
+        """
+        Converts a categorical text field into a numeric field (1-4) in a feature class or table.
+    
+        Parameters:
+            feature_class (str): Path to the feature class or table.
+            cat_field (str): Name of the existing categorical field (text).
+            num_field (str): Name of the new numeric field to create/populate.
+            category_map (dict): Optional explicit mapping, e.g. {"Low": 1, "Medium": 2, "High": 3, "Extreme": 4}.
+                                  If None, categories are auto-mapped in the order they're first encountered.
+    
+        Returns:
+            dict: The category-to-number mapping that was used.
+        """
+    
+        # Add the numeric field if it doesn't already exist
+        existing_fields = [f.name for f in arcpy.ListFields(feature_class)]
+        if num_field not in existing_fields:
+            arcpy.management.AddField(feature_class, num_field, "SHORT")
+    
+        # Build the mapping if not provided
+        if category_map is None:
+            categories = []
+            with arcpy.da.SearchCursor(feature_class, [cat_field]) as cursor:
+                for row in cursor:
+                    val = row[0]
+                    if val is not None and val not in categories:
+                        categories.append(val)
+    
+            if len(categories) > 4:
+                raise ValueError(f"Expected up to 4 categories, found {len(categories)}: {categories}")
+    
+            category_map = {cat: i + 1 for i, cat in enumerate(categories)}
+    
+        # Update rows with the mapped numeric value
+        with arcpy.da.UpdateCursor(feature_class, [cat_field, num_field]) as cursor:
+            for row in cursor:
+                cat_val = row[0]
+                row[1] = category_map.get(cat_val)  # None if category not found
+                cursor.updateRow(row)
+
+    return category_map
     def prep(self):
         '''
         preps data for analysis 
         1. spatial join with crossings 
-        2. road ids
+        2. spatial join wiht road ids
         3. convert segment score to a number 
         '''
-    def score_to_num(self): 
-        '''
-        converts a given REI score to a number for summary stats 
-        '''
+        arcpy.analysis.SpatialJoin(target_features, join_features, out_feature_class, {join_operation}, {join_type}
+    
+        
         
     def road_summary(self):
         '''
         provides summaries of REI data by road\
         1. dissolve by road id
         '''
+        arcpy.management.Dissolve()
+
