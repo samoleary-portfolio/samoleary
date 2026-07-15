@@ -314,7 +314,7 @@ class ANR_LRS:
        # arcpy.conversion.ExcelToTable(r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject\event_table12.xls", self.events, "event_table")
         
         #change self.events to "event table"
-        arcpy.lr.MakeRouteEventLayer(self.lr_routes,"RoadID",self.events,"unique_road LINE FROM_M TO_M",self.public)
+        arcpy.lr.MakeRouteEventLayer(self.lr_routes,"RoadID","event_table","RoadID LINE FROM_M TO_M",self.public)
         return self.public
         #make this layer a web layer as well 
     
@@ -330,9 +330,10 @@ class ANR_LRS:
         #removes frivolous columns from the id creation process
         self.remove_columns(data)
         #doesn't work from this point below within the function, but ran individually it does
-        '''
-        self.LR()
+        
+        self.LR(data)
         print("routes created")
-        self.update_xl   
+        self.update_xl() 
         print(r"{data} event layer created")
-        '''
+        
+        
