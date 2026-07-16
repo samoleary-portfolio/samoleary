@@ -9,6 +9,7 @@ class REI():
         arcpy.env.workspace = r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject"
         self.rei_segments = "ANR_Forest_Road_Segments"
         self.state_lands = "ANR_Lands_Dataset_(Parcel)"
+        self.summary = "rei_summary"
         
 
     def score_to_num(self, feature_class, cat_field, num_field="CAT_NUM", category_map=None):
@@ -39,10 +40,6 @@ class REI():
                     val = row[0]
                     if val is not None and val not in categories:
                         categories.append(val)
-    
-            if len(categories) > 4:
-                raise ValueError(f"Expected up to 4 categories, found {len(categories)}: {categories}")
-    
             category_map = {cat: i + 1 for i, cat in enumerate(categories)}
     
         # Update rows with the mapped numeric value
@@ -60,14 +57,46 @@ class REI():
         2. spatial join wiht road ids
         3. convert segment score to a number 
         '''
-        arcpy.analysis.SpatialJoin(target_features, join_features, out_feature_class, {join_operation}, {join_type}
-    
+        # spatial join with crossings, may need to be a normal join 
+       # arcpy.analysis.SpatialJoin(self.rei_segments, join_features, out_feature_class, {join_operation}, {join_type}
+        # spatial join with road ids
+        #need field mappings to just add Road ID
+        field_mappings = arcpy.FieldMappings()
+        field_mappings.addTable(self.clean_routes)
+        field_mappings.addTable(self.rei_segments)
+        # Fields you want to keep from join layer
+        keep_fields = ["RoadID"]
         
+        # Loop backwards so removal is safe
+        for i in reversed(range(field_mappings.fieldCount)):
+            fmap = field_mappings.getFieldMap(i)
+            field_name = fmap.outputField.name
+        
+            # If field comes from join layer AND is not wanted → remove it
+            if field_name not in keep_fields:
+                # Check if it's NOT from target layer
+                if field_name not in [f.name for f in arcpy.ListFields(self.joined_routes)]:
+                    field_mappings.removeFieldMap(i)
+        arcpy.analysis.SpatialJoin(self.rei_segments, "clean_routes", "rei_id","JOIN_ONE_TO_ONE", field_mapping = field_mappings,"INTERSECTS")
+        
+        self.rei_segments = "rei_id" #rei segments with requisite roadid's 
+        self.score_to_num(self.rei_segments, "SegmentScore", num_field="SegmentScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "CrownScore", num_field="CrownScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "DrainScore", num_field="DrainScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "CulvertScore", num_field="CulvertScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "CrossScore", num_field="CrossScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "BufferScore", num_field="BufferScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "SegmentPriority", num_field="SegmentPriority_NUM", category_map= {"Low Priority":4,"Moderate Priority": 3, "High Priority":2,"Very High Priority": 1, "N/A":None})
+
         
     def road_summary(self):
         '''
-        provides summaries of REI data by road\
+        provides summaries of REI data by road
         1. dissolve by road id
         '''
-        arcpy.management.Dissolve()
-
+        existing_fields = [f.name for f in arcpy.ListFields(feature_class)]
+        if "SegmentScore_NUM" not in existing_fields:
+            self.prep()
+        arcpy.management.Dissolve(self.rei_segments, self.summary, "RoadID",
+                                  statistics_fields = [["SegmentScore_NUM","SegmentPriority_NUM","CrownScore_NUM", "DrainScore_NUM","CulvertScore_NUM",
+                                                        "CrossScore_NUM","BufferScore_NUM","MRGPScore_NUM"],"MEAN","Count"])
