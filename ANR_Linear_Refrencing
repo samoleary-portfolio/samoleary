@@ -1,6 +1,6 @@
 class ANR_LRS: 
     '''
-    This class prepares data for and implements dynamic segmentation on Routes for the Vermont Agency of Natural Resources. It could be motified to accomplish the same goal with other data, but that functionality does not exist yet for this code.
+    This class prepares data for and implements dynamic segmentation on Routes for the Vermont Agency of Natural Resources. I
 
     Attributes:
     self.travel_routes: ANRs travel routes layer, needs to be downloaded
@@ -10,6 +10,14 @@ class ANR_LRS:
     self.lr_routes: Routes to be dynamically segmented 
     self.events: event table of dymanic segmentation
     self.public: the final, public facing layer 
+
+    Functions:
+    __init__() - initializes the class
+    clean() - merges travel routes and rei forest road segments 
+    add_id() - create a numeric id for each road 
+    remove_columns() - removes unneccesary columns for the analysis
+    LR() - performs linear refrencing processing tools, produces event table 
+    update_xl() - brings in table from excel or environment, makes route event layer 
     '''
 
     def __init__(self):
@@ -17,7 +25,7 @@ class ANR_LRS:
         initializes the LRS code
         '''
         #change for what ever your desktop is
-        arcpy.env.workspace = r"removed_for_privacy"
+        arcpy.env.workspace = r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject"
 
         arcpy.env.overwriteOutput = True
         #doesn't make temporary layers, that would be better but oh well
@@ -159,7 +167,6 @@ class ANR_LRS:
         '''
         performs ArcPy linear refrencing tools until an event table is created 
         '''
-        #check for m values
         #performs LR and returns and event table 
         arcpy.env.overwriteOutput = True
         arcpy.lr.CreateRoutes(self.clean_routes, "RoadID", self.lr_routes, "LENGTH")  
@@ -176,8 +183,7 @@ class ANR_LRS:
             Input_Table="event_table",
             Output_Excel_File=r"event_table")
         '''
-            #path would need to be changed
-        print(arcpy.GetMessages())
+         #path would need to be changed
     
     def update_xl(self):
         '''
@@ -194,7 +200,7 @@ class ANR_LRS:
         #change "event table" to self.events 
         arcpy.lr.MakeRouteEventLayer(self.lr_routes,"RoadID","event_table","RoadID LINE FROM_M TO_M",self.public)
         return self.public
-        # export public layer as web layer, add to web mao 
+        # export public layer as web layer, add to web map
     
     def create_event_layer(self, data):
         '''
