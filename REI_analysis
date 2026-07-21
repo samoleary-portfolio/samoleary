@@ -6,13 +6,14 @@ class REI():
         '''
         initializes the class
         '''
-        arcpy.env.workspace = r"C:\Users\soleary\Documents\ArcGIS\Projects\MyProject"
+        arcpy.env.workspace = r"C:\Users\soleary\Documents\ArcGIS\Projects\REI_analysis"
         self.rei_segments = "ANR_Forest_Road_Segments"
         self.state_lands = "ANR_Lands_Dataset_(Parcel)"
-        self.summary = "rei_summary"
+        self.summary = "rei_diss"
+        self.clean_routes = "clean_routes"
         
 
-    def score_to_num(self, feature_class, cat_field, num_field="CAT_NUM", category_map=None):
+    def score_to_num(self, feature_c, cat_field, num_field="CAT_NUM", category_map=None):
         """
         Converts a categorical text field into a numeric field (1-4) in a feature class or table.
     
@@ -28,14 +29,14 @@ class REI():
         """
     
         # Add the numeric field if it doesn't already exist
-        existing_fields = [f.name for f in arcpy.ListFields(feature_class)]
+        existing_fields = [f.name for f in arcpy.ListFields(feature_c)]
         if num_field not in existing_fields:
-            arcpy.management.AddField(feature_class, num_field, "SHORT")
+            arcpy.management.AddField(feature_c, num_field, "SHORT",field_is_nullable="NULLABLE")
     
         # Build the mapping if not provided
         if category_map is None:
             categories = []
-            with arcpy.da.SearchCursor(feature_class, [cat_field]) as cursor:
+            with arcpy.da.SearchCursor(feature_c, [cat_field]) as cursor:
                 for row in cursor:
                     val = row[0]
                     if val is not None and val not in categories:
@@ -43,13 +44,13 @@ class REI():
             category_map = {cat: i + 1 for i, cat in enumerate(categories)}
     
         # Update rows with the mapped numeric value
-        with arcpy.da.UpdateCursor(feature_class, [cat_field, num_field]) as cursor:
+        with arcpy.da.UpdateCursor(feature_c, [cat_field, num_field]) as cursor:
             for row in cursor:
                 cat_val = row[0]
                 row[1] = category_map.get(cat_val)  # None if category not found
                 cursor.updateRow(row)
 
-    return category_map
+        return category_map
     def prep(self):
         '''
         preps data for analysis 
@@ -75,18 +76,26 @@ class REI():
             # If field comes from join layer AND is not wanted → remove it
             if field_name not in keep_fields:
                 # Check if it's NOT from target layer
-                if field_name not in [f.name for f in arcpy.ListFields(self.joined_routes)]:
+                if field_name not in [f.name for f in arcpy.ListFields(self.rei_segments)]:
                     field_mappings.removeFieldMap(i)
-        arcpy.analysis.SpatialJoin(self.rei_segments, "clean_routes", "rei_id","JOIN_ONE_TO_ONE", field_mapping = field_mappings,"INTERSECTS")
-        
-        self.rei_segments = "rei_id" #rei segments with requisite roadid's 
-        self.score_to_num(self.rei_segments, "SegmentScore", num_field="SegmentScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
-        self.score_to_num(self.rei_segments, "CrownScore", num_field="CrownScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
-        self.score_to_num(self.rei_segments, "DrainScore", num_field="DrainScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
-        self.score_to_num(self.rei_segments, "CulvertScore", num_field="CulvertScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
-        self.score_to_num(self.rei_segments, "CrossScore", num_field="CrossScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
-        self.score_to_num(self.rei_segments, "BufferScore", num_field="BufferScore_NUM", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
-        self.score_to_num(self.rei_segments, "SegmentPriority", num_field="SegmentPriority_NUM", category_map= {"Low Priority":4,"Moderate Priority": 3, "High Priority":2,"Very High Priority": 1, "N/A":None})
+        fc = r"C:\Users\soleary\Documents\ArcGIS\Projects\REI_analysis\REI_analysis.gdb\rei_id"
+        arcpy.analysis.SpatialJoin(
+            target_features=self.rei_segments,
+            join_features=self.clean_routes,
+            out_feature_class=fc,
+            join_operation="JOIN_ONE_TO_MANY",
+            join_type="KEEP_ALL",  # optional but recommended
+            field_mapping=field_mappings,
+            match_option="INTERSECTS"
+        )        
+        self.rei_segments = fc #rei segments with requisite roadid's 
+        self.score_to_num(self.rei_segments, "SegmentScore", num_field="SegScore", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "CrownScore", num_field="CrownScr", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "DrainScore", num_field="DrainScr", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "CulvertScore", num_field="CulvertScr", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "CrossScore", num_field="CrossScr", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "BufferScore", num_field="BufferScr", category_map= {"Does Not Meet":1,"Partially Meets": 2, "Fully Meets":3,"No Score": None, "Not Connected":None})
+        self.score_to_num(self.rei_segments, "SegmentPriority", num_field="SegPrior", category_map= {"Low Priority":4,"Moderate Priority": 3, "High Priority":2,"Very High Priority": 1, "N/A":None})
 
         
     def road_summary(self):
@@ -94,9 +103,48 @@ class REI():
         provides summaries of REI data by road
         1. dissolve by road id
         '''
-        existing_fields = [f.name for f in arcpy.ListFields(feature_class)]
-        if "SegmentScore_NUM" not in existing_fields:
+        existing_fields = [f.name for f in arcpy.ListFields(self.rei_segments)]
+        print(arcpy.Describe(self.rei_segments).catalogPath)
+        if "SegScr" not in existing_fields:
             self.prep()
-        arcpy.management.Dissolve(self.rei_segments, self.summary, "RoadID",
-                                  statistics_fields = [["SegmentScore_NUM","SegmentPriority_NUM","CrownScore_NUM", "DrainScore_NUM","CulvertScore_NUM",
-                                                        "CrossScore_NUM","BufferScore_NUM","MRGPScore_NUM"],"MEAN","Count"])
+        arcpy.management.Dissolve(
+            self.rei_segments,
+            self.summary,
+            "RoadID",
+            statistics_fields=[
+                ["SegScore", "MEAN"],
+                ["SegPrior", "MEAN"],
+                ["CrownScr", "MEAN"],
+                ["DrainScr", "MEAN"],
+                ["CulvertScr", "MEAN"],
+                ["CrossScr", "MEAN"],
+                ["BufferScr", "MEAN"],
+                ["MRGPScore", "MEAN"]
+            ])
+        field_map = arcpy.FieldMappings()
+        field_map.addTable(self.summary)
+        field_map.addTable(self.rei_segments)
+        # Fields you want to keep from join layer
+        keep_fields1 = ["ANRDist"]
+        
+        # Loop backwards so removal is safe
+        for i in reversed(range(field_map.fieldCount)):
+            fmap1 = field_map.getFieldMap(i)
+            field_name1 = fmap1.outputField.name
+        
+            # If field comes from join layer AND is not wanted → remove it
+            if field_name1 not in keep_fields1:
+                # Check if it's NOT from target layer
+                if field_name1 not in [f.name for f in arcpy.ListFields(self.summary)]:
+                    field_map.removeFieldMap(i)
+        fc = r"C:\Users\soleary\Documents\ArcGIS\Projects\REI_analysis\REI_analysis.gdb\rei_sum_stats"
+        arcpy.analysis.SpatialJoin(
+            target_features=self.summary,
+            join_features=self.rei_segments,
+            out_feature_class=fc,
+            join_operation="JOIN_ONE_TO_ONE",
+            join_type="KEEP_ALL",  # optional but recommended
+            field_mapping=field_map,
+            match_option="INTERSECTS"
+        )   
+        
