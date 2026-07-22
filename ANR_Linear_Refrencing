@@ -37,6 +37,8 @@ class ANR_LRS:
         self.events = "events"
         self.public = "public_layer"
         self.diss = "dissolved"
+        self.event_array = ["RoadCategory", "SharedSystem"]
+        self.merge = "merge"
     
         
     def clean(self):
@@ -46,36 +48,41 @@ class ANR_LRS:
 
         '''
         #should yield the unique combination of the travel routes and rei segments 
-
         #getting rid of global ID 
         
-        field_map = arcpy.FieldMappings()
-        field_map.addTable(self.travel_routes)
-                
-        rem_fields = "GlOBALID"
+
+        arcpy.management.Merge([self.rei_segments,self.travel_routes], self.joined_routes)
         
-        field_index = field_map.findFieldMapIndex(rem_fields)
-        field_map.removeFieldMap(field_index)
-        arcpy.conversion.ExportFeatures(self.travel_routes, "routes_no_id", field_mapping = field_map)
+        arcpy.management.MakeFeatureLayer(self.joined_routes, "joined_routes_lyr")
         
-        arcpy.management.Merge(
-                ["routes_no_id", self.rei_segments],
-                self.joined_routes
-            )
-            
-        print(arcpy.GetMessages())
-            
-        if not arcpy.Exists(self.joined_routes):
-            raise Exception("Merge failed — joined_routes was not created")
+        self.joined_routes =  arcpy.management.CopyFeatures("joined_routes_lyr",self.clean_routes)
+    
+        arcpy.management.AddField(self.joined_routes, 'merge_f', 'SHORT')
+        with arcpy.da.UpdateCursor(self.joined_routes,
+                ["merge_f"]) as cursor: 
+            for row in cursor:
+                row[0] = 1
+                cursor.updateRow(row)  
+    
+        arcpy.management.MultipartToSinglepart(self.joined_routes, self.merge)
+        arcpy.cartography.MergeDividedRoads(
+            in_features=self.merge, 
+            merge_field="merge_f", 
+            merge_distance="5 meters", 
+            out_features=self.joined_routes
+        )
+        
+        
+        
         #standardize variables as well, eg all layers use the same thing for segment id, etc
         
         #needs to be a layer, not feature class in order to work 
-        arcpy.management.MakeFeatureLayer(self.joined_routes, "joined_routes_lyr")
+        
       
         #look at returned layer 
         # idk if this actually exports the selected features 
-        self.joined_routes =  arcpy.management.CopyFeatures("joined_routes_lyr",self.clean_routes)
         #self.joined_routes = "dist1_roads"
+        
         return self.joined_routes 
                         
                     
@@ -124,6 +131,13 @@ class ANR_LRS:
                 row[2] = full_id
                 cursor.updateRow(row)  
             self.joined_route = self.clean_routes
+            arcpy.management.MultipartToSinglepart(self.joined_routes, self.merge)
+            arcpy.cartography.MergeDividedRoads(
+                in_features=self.merge, 
+                merge_field="merge_f", 
+                merge_distance="5 meters", 
+                out_features=self.joined_routes
+                )
             return self.clean_routes
         #take ANRDIST, RoadName and SegmentID and concatinate them
    
@@ -169,10 +183,10 @@ class ANR_LRS:
         '''
         #performs LR and returns and event table 
         arcpy.env.overwriteOutput = True
-        arcpy.lr.CreateRoutes(self.clean_routes, "RoadID", self.lr_routes, "LENGTH")  
+        arcpy.lr.CreateRoutes(self.joined_routes, "RoadID", self.lr_routes, "LENGTH")  
         
         #dissolve keep by whatever attribute we are using
-        arcpy.management.Dissolve(self.clean_routes,self.diss, data)
+        arcpy.management.Dissolve(self.joined_routes,self.diss, data)
         arcpy.lr.LocateFeaturesAlongRoutes(self.diss, self.lr_routes,
                                    "RoadID", "0.5 Feet", "event_table",
                                    "RoadID LINE FROM_M TO_M")
@@ -208,13 +222,14 @@ class ANR_LRS:
 
         '''
         self.clean()
-        self.remove_columns(data)
+        #self.remove_columns(data)
         print("columns removed")
         self.add_id()
         print("ids created")
         #removes frivolous columns from the id creation process
-        self.remove_columns(data)        
+       # self.remove_columns(data)        
         self.LR(data)
+        
         print("routes created")
         self.update_xl() 
         print("event layer created")
